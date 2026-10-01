@@ -37,10 +37,30 @@ export default function TopNavBar() {
               <Instagram className="h-4 w-4 md:h-5 md:w-5" />
               <span className="hidden font-mono text-xs font-bold uppercase tracking-widest lg:inline">Instagram</span>
             </a>
-            <button type="button" onClick={() => user && isAdmin ? setAdminPanelOpen(true) : setAuthOpen(true)} aria-label={user && isAdmin ? 'Abrir panel admin' : user ? 'Abrir cuenta' : 'Iniciar sesión'} className="inline-flex h-10 items-center justify-center gap-2 border border-outline-variant px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:border-primary-container hover:text-primary-container">
-              {loading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-on-surface-variant border-t-transparent" /> : user && isAdmin ? <ShieldCheck className="h-4 w-4 text-primary-container" /> : <UserRound className="h-4 w-4" />}
-              <span className="hidden sm:inline">{loading ? '...' : user ? (isAdmin ? 'Admin' : 'Cuenta') : 'Acceder'}</span>
-            </button>
+            {loading ? (
+              <button type="button" disabled aria-label="Comprobando sesión" className="inline-flex h-10 items-center justify-center gap-2 border border-outline-variant px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant disabled:opacity-60">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-on-surface-variant border-t-transparent" />
+                <span className="hidden sm:inline">...</span>
+              </button>
+            ) : user ? (
+              <>
+                <button type="button" onClick={() => setAuthOpen(true)} aria-label="Abrir cuenta" className="inline-flex h-10 items-center justify-center gap-2 border border-outline-variant px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:border-primary-container hover:text-primary-container">
+                  <UserRound className="h-4 w-4" />
+                  <span className="hidden sm:inline">Cuenta</span>
+                </button>
+                {isAdmin && (
+                  <button type="button" onClick={() => setAdminPanelOpen(true)} aria-label="Abrir panel admin" className="inline-flex h-10 items-center justify-center gap-2 border border-primary-container/60 px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-primary-container transition-colors hover:border-primary-container hover:bg-primary-container hover:text-on-primary">
+                    <ShieldCheck className="h-4 w-4" />
+                    <span className="hidden sm:inline">Admin</span>
+                  </button>
+                )}
+              </>
+            ) : (
+              <button type="button" onClick={() => setAuthOpen(true)} aria-label="Iniciar sesión" className="inline-flex h-10 items-center justify-center gap-2 border border-outline-variant px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:border-primary-container hover:text-primary-container">
+                <UserRound className="h-4 w-4" />
+                <span className="hidden sm:inline">Acceder</span>
+              </button>
+            )}
             <a className="hidden bg-primary-container px-5 py-3 font-mono text-xs font-bold uppercase tracking-widest text-on-primary transition-colors hover:bg-primary md:inline-flex" href="#contact">Únete al equipo</a>
             <button
               type="button"
@@ -63,10 +83,16 @@ export default function TopNavBar() {
                   {link.label}
                 </a>
               ))}
-              <button type="button" onClick={() => { setMenuOpen(false); user && isAdmin ? setAdminPanelOpen(true) : setAuthOpen(true); }} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 border border-primary-container bg-primary-container px-5 font-mono text-xs font-bold uppercase tracking-widest text-on-primary">
-                {user ? (isAdmin ? <ShieldCheck className="h-4 w-4" /> : <UserRound className="h-4 w-4" />) : <UserRound className="h-4 w-4" />}
-                {user ? (isAdmin ? 'Panel admin' : 'Mi cuenta') : 'Iniciar sesión'}
+              <button type="button" onClick={() => { setMenuOpen(false); setAuthOpen(true); }} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 border border-primary-container bg-primary-container px-5 font-mono text-xs font-bold uppercase tracking-widest text-on-primary">
+                <UserRound className="h-4 w-4" />
+                {user ? 'Mi cuenta' : 'Iniciar sesión'}
               </button>
+              {user && isAdmin && (
+                <button type="button" onClick={() => { setMenuOpen(false); setAdminPanelOpen(true); }} className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 border border-primary-container px-5 font-mono text-xs font-bold uppercase tracking-widest text-primary-container">
+                  <ShieldCheck className="h-4 w-4" />
+                  Panel admin
+                </button>
+              )}
               <a href="#contact" onClick={() => setMenuOpen(false)} className="mt-3 inline-flex min-h-11 items-center justify-center bg-surface-container px-5 font-mono text-xs font-bold uppercase tracking-widest text-primary">
                 Únete al equipo
               </a>
