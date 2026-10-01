@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useAuth } from '../contexts/AuthContext';
 
 const heroVideoSrc = new URL('../../video/call-of-duty-black-ops-6-moewalls-com-optimized.mp4', import.meta.url).href;
 
 export default function Hero() {
   const [shouldPlayVideo, setShouldPlayVideo] = useState(false);
-  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const { user, displayName, loading } = useAuth();
 
   useEffect(() => {
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -18,17 +19,8 @@ export default function Hero() {
     return () => motionPreference.removeEventListener('change', updateMotionPreference);
   }, []);
 
-  useEffect(() => {
-    const updateNetworkStatus = () => setIsOnline(navigator.onLine);
-
-    window.addEventListener('online', updateNetworkStatus);
-    window.addEventListener('offline', updateNetworkStatus);
-
-    return () => {
-      window.removeEventListener('online', updateNetworkStatus);
-      window.removeEventListener('offline', updateNetworkStatus);
-    };
-  }, []);
+  const isAuthenticated = Boolean(user);
+  const visibleName = displayName.trim() || user?.user_metadata.display_name || user?.email?.split('@')[0] || 'USUARIO';
 
   return (
     <section id="inicio" aria-labelledby="hero-title" className="hero-section relative isolate flex min-h-[78svh] items-center overflow-hidden border-b border-outline-variant px-6 py-16 md:min-h-[calc(100svh-5rem)] md:px-16">
@@ -48,9 +40,9 @@ export default function Hero() {
       <div aria-hidden="true" className="hero-frame pointer-events-none absolute inset-4 z-10 md:inset-7" />
       <div aria-hidden="true" className="hero-sweep pointer-events-none absolute inset-y-10 left-0 right-0 z-10 overflow-hidden" />
       <div role="status" aria-live="polite" aria-atomic="true" className="absolute right-8 top-8 z-20 inline-flex items-center gap-2 border border-outline-variant/80 bg-surface/75 px-3 py-2 backdrop-blur-sm md:right-16 md:top-10">
-        <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.75)]' : 'bg-red-400'}`} />
-        <span className={`font-mono text-[9px] font-bold uppercase tracking-widest sm:text-[10px] ${isOnline ? 'text-emerald-100' : 'text-red-200'}`}>
-          {isOnline ? 'RED CONECTADA' : 'SIN CONEXIÓN'}
+        <span className={`h-2 w-2 rounded-full ${isAuthenticated ? 'bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.75)]' : 'bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.55)]'}`} />
+        <span className={`font-mono text-[9px] font-bold uppercase tracking-widest sm:text-[10px] ${isAuthenticated ? 'text-emerald-100' : 'text-red-200'}`}>
+          {loading ? 'SINCRONIZANDO' : isAuthenticated ? `${visibleName} · ONLINE` : 'OFFLINE'}
         </span>
       </div>
 

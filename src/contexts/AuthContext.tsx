@@ -6,6 +6,7 @@ type MemberStatus = 'pending' | 'approved' | 'rejected' | null;
 
 interface AuthContextValue {
   user: User | null;
+  displayName: string;
   isAdmin: boolean;
   memberStatus: MemberStatus;
   loading: boolean;
@@ -13,6 +14,7 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (displayName: string, email: string, password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
+  updateDisplayName: (displayName: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -23,6 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roleLoading, setRoleLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [memberStatus, setMemberStatus] = useState<MemberStatus>(null);
+  const [displayName, setDisplayName] = useState('');
 
   useEffect(() => {
     if (!supabase) {
@@ -58,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase || !session?.user.id) {
       setIsAdmin(false);
       setMemberStatus(null);
+      setDisplayName('');
       setRoleLoading(false);
       return;
     }
@@ -76,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle(),
       supabase
         .from('profiles')
-        .select('membership_status')
+        .select('membership_status,display_name')
         .eq('id', session.user.id)
         .maybeSingle(),
     ]).then(([roleResult, profileResult]) => {
@@ -85,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profileResult.error) console.error('No se pudo comprobar la aprobación de miembro:', profileResult.error);
       setIsAdmin(!roleResult.error && roleResult.data?.role === 'admin');
       setMemberStatus(profileResult.error ? null : profileResult.data?.membership_status ?? null);
+      setDisplayName(profileResult.error ? String(session.user.user_metadata.display_name ?? '') : profileResult.data?.display_name ?? '');
       setRoleLoading(false);
     }).catch((error: unknown) => {
       if (!active) return;
@@ -120,9 +125,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
+  const updateDisplayName = (nextDisplayName: string) => {
+    setDisplayName(nextDisplayName);
+  };
+
   return (
     <AuthContext.Provider value={{
       user: session?.user ?? null,
+      displayName,
       isAdmin,
       memberStatus,
       loading: authLoading || roleLoading,
@@ -130,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
+      updateDisplayName,
     }}>
       {children}
     </AuthContext.Provider>

@@ -9,7 +9,7 @@ interface AuthDialogProps {
 }
 
 export default function AuthDialog({ open, onClose }: AuthDialogProps) {
-  const { user, isAdmin, memberStatus, loading, configured, signIn, signUp, signOut } = useAuth();
+  const { user, isAdmin, memberStatus, loading, configured, signIn, signUp, signOut, updateDisplayName } = useAuth();
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [displayName, setDisplayName] = useState('');
   const [nickname, setNickname] = useState('');
@@ -120,6 +120,7 @@ export default function AuthDialog({ open, onClose }: AuthDialogProps) {
         .eq('id', user.id);
       if (updateError) throw updateError;
       setNickname(cleanNickname);
+      updateDisplayName(cleanNickname);
       setNotice('Nick actualizado.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'No se pudo guardar el nick.');
