@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { CalendarDays, Check, ImagePlus, LoaderCircle, ShieldCheck, Upload, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, ImagePlus, LoaderCircle, Pencil, ShieldCheck, Upload, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -10,16 +10,20 @@ const eventTitlePrefix = 'Operación - ';
 interface EventRow {
   id: string;
   title: string;
+  description: string;
   starts_at: string | null;
   location_name: string;
+  capacity: number | null;
   status: EventStatus;
 }
 
 interface AlbumRow {
   id: string;
   title: string;
+  description: string;
   status: 'draft' | 'published' | 'archived';
   created_at: string;
+  occurred_on: string | null;
   event_id: string | null;
 }
 
@@ -41,6 +45,12 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'No se pudo completar la operación.';
 }
 
+function toDateTimeLocal(value: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
 export default function AdminPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { isAdmin } = useAuth();
   const [tab, setTab] = useState<PanelTab>('events');
@@ -59,10 +69,13 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
   const [eventDescription, setEventDescription] = useState('');
   const [eventCapacity, setEventCapacity] = useState('');
   const [eventStatus, setEventStatus] = useState<EventStatus>('published');
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [albumTitle, setAlbumTitle] = useState('');
   const [albumDate, setAlbumDate] = useState('');
   const [albumDescription, setAlbumDescription] = useState('');
   const [albumEventId, setAlbumEventId] = useState('');
+  const [albumStatus, setAlbumStatus] = useState<AlbumRow['status']>('published');
+  const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
 
   useEffect(() => {
@@ -75,8 +88,8 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
     async function loadRecords() {
       if (!supabase) return;
       const [eventResult, albumResult] = await Promise.all([
-        supabase.from('events').select('id,title,starts_at,location_name,status').order('created_at', { ascending: false }),
-        supabase.from('albums').select('id,title,status,created_at,event_id').order('created_at', { ascending: false }),
+        supabase.from('events').select('id,title,description,starts_at,location_name,capacity,status').order('created_at', { ascending: false }),
+        supabase.from('albums').select('id,title,description,status,created_at,occurred_on,event_id').order('created_at', { ascending: false }),
       ]);
 
       if (eventResult.error) throw eventResult.error;
@@ -181,7 +194,7 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
     }
   };
 
-  const handleCreateEvent = async (submitEvent: FormEvent<HTMLFormElement>) => {
+  const handleSaveEvent = async (submitEvent: FormEvent<HTMLFormElement>) => {
     submitEvent.preventDefault();
     if (!supabase) return;
     setSubmitting(true);
@@ -189,24 +202,35 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
     setError('');
 
     try {
-      const { error: insertError } = await supabase.from('events').insert({
+      const eventValues = {
         title: eventTitle.trim(),
-        slug: makeSlug(eventTitle),
         description: eventDescription.trim(),
         starts_at: eventDate ? new Date(eventDate).toISOString() : null,
         location_name: eventLocation.trim(),
         capacity: eventCapacity ? Number(eventCapacity) : null,
         status: eventStatus,
-      });
-      if (insertError) throw insertError;
+      };
 
+      if (editingEventId) {
+        const { error: updateError } = await supabase.from('events').update(eventValues).eq('id', editingEventId);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase.from('events').insert({
+          ...eventValues,
+          slug: makeSlug(eventTitle),
+        });
+        if (insertError) throw insertError;
+      }
+
+      setEditingEventId(null);
       setEventTitle(eventTitlePrefix);
       setEventDate('');
       setEventLocation('');
       setEventDescription('');
       setEventCapacity('');
-      setNotice('Operación guardada.');
-      const { data, error: refreshError } = await supabase.from('events').select('id,title,starts_at,location_name,status').order('created_at', { ascending: false });
+      setEventStatus('published');
+      setNotice(editingEventId ? 'Operación actualizada.' : 'Operación guardada.');
+      const { data, error: refreshError } = await supabase.from('events').select('id,title,description,starts_at,location_name,capacity,status').order('created_at', { ascending: false });
       if (refreshError) throw refreshError;
       setEvents((data ?? []) as EventRow[]);
     } catch (submitError) {
@@ -216,12 +240,41 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
     }
   };
 
-  const handleCreateAlbum = async (submitEvent: FormEvent<HTMLFormElement>) => {
+  const handleSaveAlbum = async (submitEvent: FormEvent<HTMLFormElement>) => {
     submitEvent.preventDefault();
-    if (!supabase || photos.length === 0) return;
+    if (!supabase || (!editingAlbumId && photos.length === 0)) return;
     setSubmitting(true);
     setNotice('');
     setError('');
+
+    if (editingAlbumId) {
+      try {
+        const { error: updateError } = await supabase.from('albums').update({
+          title: albumTitle.trim(),
+          description: albumDescription.trim(),
+          occurred_on: albumDate || null,
+          event_id: albumEventId || null,
+          status: albumStatus,
+        }).eq('id', editingAlbumId);
+        if (updateError) throw updateError;
+
+        setEditingAlbumId(null);
+        setAlbumTitle('');
+        setAlbumDate('');
+        setAlbumDescription('');
+        setAlbumEventId('');
+        setAlbumStatus('published');
+        setNotice('Expediente actualizado.');
+        const { data, error: refreshError } = await supabase.from('albums').select('id,title,description,status,created_at,occurred_on,event_id').order('created_at', { ascending: false });
+        if (refreshError) throw refreshError;
+        setAlbums((data ?? []) as AlbumRow[]);
+      } catch (updateError) {
+        setError(getErrorMessage(updateError));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
 
     let albumId: string | null = null;
     const uploadedPaths: string[] = [];
@@ -266,9 +319,10 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
       setAlbumDate('');
       setAlbumDescription('');
       setAlbumEventId('');
+      setAlbumStatus('published');
       setPhotos([]);
       setNotice('Expediente publicado con sus fotografías.');
-      const { data, error: refreshError } = await supabase.from('albums').select('id,title,status,created_at,event_id').order('created_at', { ascending: false });
+      const { data, error: refreshError } = await supabase.from('albums').select('id,title,description,status,created_at,occurred_on,event_id').order('created_at', { ascending: false });
       if (refreshError) throw refreshError;
       setAlbums((data ?? []) as AlbumRow[]);
     } catch (submitError) {
@@ -282,6 +336,49 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleEditEvent = (event: EventRow) => {
+    setEditingEventId(event.id);
+    setEventTitle(event.title);
+    setEventDate(toDateTimeLocal(event.starts_at));
+    setEventLocation(event.location_name);
+    setEventDescription(event.description);
+    setEventCapacity(event.capacity?.toString() ?? '');
+    setEventStatus(event.status);
+    setNotice('');
+    setError('');
+  };
+
+  const handleCancelEventEdit = () => {
+    setEditingEventId(null);
+    setEventTitle(eventTitlePrefix);
+    setEventDate('');
+    setEventLocation('');
+    setEventDescription('');
+    setEventCapacity('');
+    setEventStatus('published');
+  };
+
+  const handleEditAlbum = (album: AlbumRow) => {
+    setEditingAlbumId(album.id);
+    setAlbumTitle(album.title);
+    setAlbumDate(album.occurred_on ?? '');
+    setAlbumDescription(album.description);
+    setAlbumEventId(album.event_id ?? '');
+    setAlbumStatus(album.status);
+    setPhotos([]);
+    setNotice('');
+    setError('');
+  };
+
+  const handleCancelAlbumEdit = () => {
+    setEditingAlbumId(null);
+    setAlbumTitle('');
+    setAlbumDate('');
+    setAlbumDescription('');
+    setAlbumEventId('');
+    setAlbumStatus('published');
   };
 
   if (!open) return null;
@@ -392,8 +489,8 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
             <div className="grid min-h-0 overflow-y-auto lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
               <div className="p-5 sm:p-8">
                 {tab === 'events' ? (
-                  <form className="flex flex-col gap-4" onSubmit={handleCreateEvent}>
-                    <h3 className="font-tactical text-2xl font-bold uppercase text-primary">Nueva operación</h3>
+                  <form className="flex flex-col gap-4" onSubmit={handleSaveEvent}>
+                    <h3 className="font-tactical text-2xl font-bold uppercase text-primary">{editingEventId ? 'Editar operación' : 'Nueva operación'}</h3>
                     <div>
                       <label htmlFor="admin-event-title" className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Nombre</label>
                       <input id="admin-event-title" required value={eventTitle} onChange={(event) => setEventTitle(event.target.value)} className="min-h-11 w-full border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body text-sm text-on-surface outline-none focus:border-primary-container" />
@@ -421,16 +518,18 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
                       <select id="admin-event-status" value={eventStatus} onChange={(event) => setEventStatus(event.target.value as EventStatus)} className="min-h-11 w-full border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body text-sm text-on-surface outline-none focus:border-primary-container">
                         <option value="draft">Borrador</option>
                         <option value="published">Publicar ahora</option>
+                        {editingEventId && <option value="cancelled">Cancelada</option>}
                       </select>
                     </div>
                     <button type="submit" disabled={submitting} className="mt-2 inline-flex min-h-11 items-center justify-center gap-2 bg-primary-container px-4 font-mono text-xs font-bold uppercase tracking-widest text-on-primary disabled:opacity-50">
                       {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                      Guardar operación
+                      {editingEventId ? 'Guardar cambios' : 'Guardar operación'}
                     </button>
+                    {editingEventId && <button type="button" disabled={submitting} onClick={handleCancelEventEdit} className="min-h-10 border border-outline-variant px-4 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant hover:border-primary-container hover:text-primary-container disabled:opacity-50">Cancelar edición</button>}
                   </form>
                 ) : (
-                  <form className="flex flex-col gap-4" onSubmit={handleCreateAlbum}>
-                    <h3 className="font-tactical text-2xl font-bold uppercase text-primary">Nuevo expediente</h3>
+                  <form className="flex flex-col gap-4" onSubmit={handleSaveAlbum}>
+                    <h3 className="font-tactical text-2xl font-bold uppercase text-primary">{editingAlbumId ? 'Editar expediente' : 'Nuevo expediente'}</h3>
                     <div>
                       <label htmlFor="admin-album-title" className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Operación</label>
                       <input id="admin-album-title" required value={albumTitle} onChange={(event) => setAlbumTitle(event.target.value)} className="min-h-11 w-full border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body text-sm text-on-surface outline-none focus:border-primary-container" />
@@ -452,15 +551,27 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
                       <label htmlFor="admin-album-description" className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Nota de archivo</label>
                       <textarea id="admin-album-description" rows={2} value={albumDescription} onChange={(event) => setAlbumDescription(event.target.value)} className="w-full resize-y border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body text-sm text-on-surface outline-none focus:border-primary-container" />
                     </div>
-                    <div>
-                      <label htmlFor="admin-album-photos" className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Fotografías</label>
-                      <input id="admin-album-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required onChange={(event) => setPhotos(Array.from(event.target.files ?? []))} className="min-h-11 w-full border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body text-xs text-on-surface file:mr-3 file:border-0 file:bg-surface-container file:px-3 file:py-1 file:font-mono file:text-[9px] file:font-bold file:uppercase file:text-primary-container" />
-                      {photos.length > 0 && <p className="mt-2 font-mono text-[9px] uppercase tracking-widest text-on-surface-variant">{photos.length} archivos seleccionados</p>}
-                    </div>
-                    <button type="submit" disabled={submitting || photos.length === 0} className="mt-2 inline-flex min-h-11 items-center justify-center gap-2 bg-primary-container px-4 font-mono text-xs font-bold uppercase tracking-widest text-on-primary disabled:opacity-50">
+                    {editingAlbumId ? (
+                      <div>
+                        <label htmlFor="admin-album-status" className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Estado</label>
+                        <select id="admin-album-status" value={albumStatus} onChange={(event) => setAlbumStatus(event.target.value as AlbumRow['status'])} className="min-h-11 w-full border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body text-sm text-on-surface outline-none focus:border-primary-container">
+                          <option value="draft">Borrador</option>
+                          <option value="published">Publicado</option>
+                          <option value="archived">Archivado</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <label htmlFor="admin-album-photos" className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Fotografías</label>
+                        <input id="admin-album-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required onChange={(event) => setPhotos(Array.from(event.target.files ?? []))} className="min-h-11 w-full border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body text-xs text-on-surface file:mr-3 file:border-0 file:bg-surface-container file:px-3 file:py-1 file:font-mono file:text-[9px] file:font-bold file:uppercase file:text-primary-container" />
+                        {photos.length > 0 && <p className="mt-2 font-mono text-[9px] uppercase tracking-widest text-on-surface-variant">{photos.length} archivos seleccionados</p>}
+                      </div>
+                    )}
+                    <button type="submit" disabled={submitting || (!editingAlbumId && photos.length === 0)} className="mt-2 inline-flex min-h-11 items-center justify-center gap-2 bg-primary-container px-4 font-mono text-xs font-bold uppercase tracking-widest text-on-primary disabled:opacity-50">
                       {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                      Subir y publicar expediente
+                      {editingAlbumId ? 'Guardar cambios' : 'Subir y publicar expediente'}
                     </button>
+                    {editingAlbumId && <button type="button" disabled={submitting} onClick={handleCancelAlbumEdit} className="min-h-10 border border-outline-variant px-4 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant hover:border-primary-container hover:text-primary-container disabled:opacity-50">Cancelar edición</button>}
                   </form>
                 )}
               </div>
@@ -478,20 +589,31 @@ export default function AdminPanel({ open, onClose }: { open: boolean; onClose: 
                       <div className="min-w-0">
                         <span className="block break-words font-tactical text-xl font-bold uppercase text-primary">{event.title}</span>
                         <span className="mt-1 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">{event.location_name || 'Ubicación pendiente'}</span>
+                        <span className="mt-1 block font-mono text-[9px] uppercase tracking-widest text-on-surface-variant">{event.starts_at ? new Date(event.starts_at).toLocaleString('es-ES') : 'Fecha pendiente'}</span>
                       </div>
-                      <span className={`shrink-0 border px-2 py-1 font-mono text-[8px] font-bold uppercase tracking-widest ${event.status === 'published' ? 'border-emerald-300/40 text-emerald-200' : event.status === 'cancelled' ? 'border-red-300/40 text-red-200' : 'border-outline-variant text-on-surface-variant'}`}>
-                        {event.status === 'published' ? 'Publicado' : event.status === 'cancelled' ? 'Cancelado' : 'Borrador'}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className={`border px-2 py-1 font-mono text-[8px] font-bold uppercase tracking-widest ${event.status === 'published' ? 'border-emerald-300/40 text-emerald-200' : event.status === 'cancelled' ? 'border-red-300/40 text-red-200' : 'border-outline-variant text-on-surface-variant'}`}>
+                          {event.status === 'published' ? 'Publicado' : event.status === 'cancelled' ? 'Cancelado' : 'Borrador'}
+                        </span>
+                        <button type="button" aria-label={`Editar ${event.title}`} title="Editar operación" disabled={submitting} onClick={() => handleEditEvent(event)} className="flex h-9 w-9 items-center justify-center border border-outline-variant text-on-surface-variant transition-colors hover:border-primary-container hover:text-primary-container disabled:opacity-50">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   )) : albums.map((album) => (
                     <div key={album.id} className="flex items-start justify-between gap-3 py-3">
                       <div className="min-w-0">
                         <span className="block break-words font-tactical text-xl font-bold uppercase text-primary">{album.title}</span>
-                        <span className="mt-1 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">{new Date(album.created_at).toLocaleDateString('es-ES')}</span>
+                        <span className="mt-1 block font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">{album.occurred_on ? new Date(`${album.occurred_on}T00:00:00`).toLocaleDateString('es-ES') : 'Fecha pendiente'}</span>
                       </div>
-                      <span className={`shrink-0 border px-2 py-1 font-mono text-[8px] font-bold uppercase tracking-widest ${album.status === 'published' ? 'border-emerald-300/40 text-emerald-200' : 'border-outline-variant text-on-surface-variant'}`}>
-                        {album.status === 'published' ? 'Publicado' : album.status === 'archived' ? 'Archivado' : 'Borrador'}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className={`border px-2 py-1 font-mono text-[8px] font-bold uppercase tracking-widest ${album.status === 'published' ? 'border-emerald-300/40 text-emerald-200' : 'border-outline-variant text-on-surface-variant'}`}>
+                          {album.status === 'published' ? 'Publicado' : album.status === 'archived' ? 'Archivado' : 'Borrador'}
+                        </span>
+                        <button type="button" aria-label={`Editar ${album.title}`} title="Editar expediente" disabled={submitting} onClick={() => handleEditAlbum(album)} className="flex h-9 w-9 items-center justify-center border border-outline-variant text-on-surface-variant transition-colors hover:border-primary-container hover:text-primary-container disabled:opacity-50">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {!loading && (tab === 'events' ? events.length === 0 : albums.length === 0) && (
