@@ -30,6 +30,8 @@ Aplica también `20261001030000_member_approval.sql`. Los perfiles existentes qu
 
 Aplica después `20261001040000_separate_member_admin_role.sql` para mantener separadas ambas acciones: `approve_member_request(user_id)` solo aprueba la pertenencia y `set_user_admin_role(user_id)` asigna el rol admin únicamente a un miembro ya aprobado y con email confirmado. El panel muestra ambas operaciones en la misma pestaña, pero en bloques distintos. No se concede acceso de escritura directo a la tabla de roles desde el navegador.
 
+En Supabase Auth > URL Configuration, configura `https://leg-ix.com` como Site URL y añade estos Redirect URLs: `https://leg-ix.com/**`, `https://www.leg-ix.com/**` y `http://localhost:3000/**`. El registro envía el enlace de confirmación de vuelta al mismo origen desde el que se registró el usuario. Para evitar límites del correo de prueba de Supabase al invitar a varios usuarios, configura un SMTP propio en Authentication > SMTP Settings.
+
 ## Fotos
 
 El bucket privado `mission-photos` permite leer únicamente fotos de álbumes publicados; los administradores también pueden leer borradores. Solo administradores pueden subir, modificar o borrar. El frontend deberá solicitar URLs firmadas para mostrar fotos publicadas. La base de datos guarda rutas relativas, no URLs firmadas ni claves secretas.

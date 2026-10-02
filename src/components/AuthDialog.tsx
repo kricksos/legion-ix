@@ -8,6 +8,19 @@ interface AuthDialogProps {
   onClose: () => void;
 }
 
+function getAuthErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  const normalizedMessage = message.toLowerCase();
+
+  if (normalizedMessage.includes('rate limit') || normalizedMessage.includes('over_email_send_rate_limit')) {
+    return 'Supabase ha limitado temporalmente el envío de correos. Espera antes de volver a intentarlo; si la cuenta ya se creó, no repitas el registro. Para altas frecuentes, configura un SMTP propio en Supabase.';
+  }
+  if (normalizedMessage.includes('already registered') || normalizedMessage.includes('user already exists')) {
+    return 'Ya existe una cuenta con ese correo. Inicia sesión o revisa el correo de confirmación que se envió anteriormente.';
+  }
+  return message || 'No se pudo completar la solicitud.';
+}
+
 export default function AuthDialog({ open, onClose }: AuthDialogProps) {
   const { user, isAdmin, memberStatus, loading, configured, signIn, signUp, signOut, updateDisplayName } = useAuth();
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
@@ -84,7 +97,7 @@ export default function AuthDialog({ open, onClose }: AuthDialogProps) {
         setNotice(confirmationRequired ? 'Cuenta creada. Confirma el correo y, después, espera la aprobación de la administración.' : 'Cuenta creada. Ahora queda pendiente la aprobación de la administración.');
       }
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'No se pudo completar la solicitud.');
+      setError(getAuthErrorMessage(submitError));
     } finally {
       setSubmitting(false);
     }
