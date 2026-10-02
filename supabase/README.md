@@ -20,6 +20,8 @@ La tabla de roles no admite escrituras desde la API pública. El alta inicial y 
 
 Las cuentas autenticadas consultan sus propias inscripciones. Para apuntarse o cancelar, el cliente debe llamar a `register_for_event(event_id)` o `cancel_my_event_registration(event_id)`. La función de inscripción bloquea el evento mientras comprueba el aforo y evita duplicados.
 
+Aplica `20261002000000_close_completed_events.sql` para cerrar también la inscripción en la base de datos cuando haya pasado el día del evento en horario de Madrid. La web marca esas operaciones como completadas y muestra cinco por página, de más recientes a más antiguas.
+
 Después de la migración inicial, aplica `20261001020000_event_registration_summary.sql`: `get_event_registration_count(event_id)` permite consultar el total de un evento publicado y `get_event_participants(event_id)` devuelve solo nombres visibles a usuarios autenticados. No expone correos.
 
 La migración `20261001020000_event_registration_summary.sql` añade el contador de inscritos (`get_event_registration_count`) y la lista autenticada de nombres (`get_event_participants`). La lista solo devuelve nombres visibles, nunca correos.
@@ -38,4 +40,4 @@ El bucket privado `mission-photos` permite leer únicamente fotos de álbumes pu
 
 ## Aplicar las migraciones
 
-Desde la raíz del repositorio, inicializa y enlaza la CLI con el proyecto y ejecuta `supabase db push`; las migraciones se aplican en orden. También puedes ejecutar los archivos SQL en el SQL Editor de Supabase, empezando por la migración inicial y siguiendo por las migraciones de resumen de inscripciones, aprobación de miembros y separación del rol admin. No se añaden claves privilegiadas al repositorio: el frontend solo usa la URL y la clave pública.
+Desde la raíz del repositorio, inicializa y enlaza la CLI con el proyecto y ejecuta `supabase db push`; las migraciones se aplican en orden. También puedes ejecutar los archivos SQL en el SQL Editor de Supabase, empezando por la migración inicial y siguiendo por las migraciones de resumen de inscripciones, aprobación de miembros, separación del rol admin y cierre de operaciones completadas. No se añaden claves privilegiadas al repositorio: el frontend solo usa la URL y la clave pública.

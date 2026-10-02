@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
-import { CalendarDays, Crosshair, MapPin, UserRoundCheck, UsersRound } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, Crosshair, MapPin, UserRoundCheck, UsersRound } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
@@ -10,14 +10,31 @@ interface Event {
   id?: string;
   title: string;
   date: string;
+  startsAt: string | null;
   location: string;
 }
 
 const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTFxE7K4-jMr4vtMO3oQzwQBlGRVGKi5mxenzqhhomYP-4K0kqWBDo9r2a-y3wQEtirY7qFq4PPvbeB/pub?output=csv';
+const eventsPerPage = 5;
+
+function getMadridDateKey(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Madrid',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value ?? '';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+  return `${year}-${month}-${day}`;
+}
 
 export default function Calendar() {
   const { user, memberStatus } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
+  const [eventPage, setEventPage] = useState(0);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [registrationIds, setRegistrationIds] = useState<string[]>([]);
@@ -33,6 +50,11 @@ export default function Calendar() {
   const [authOpen, setAuthOpen] = useState(false);
 
   useEffect(() => {
+    const intervalId = window.setInterval(() => setCurrentTime(new Date()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     async function fetchEvents() {
       try {
@@ -41,20 +63,22 @@ export default function Calendar() {
             .from('events')
             .select('id,title,starts_at,location_name,status')
             .eq('status', 'published')
-            .order('starts_at', { ascending: true, nullsFirst: false });
+            .order('starts_at', { ascending: false, nullsFirst: false });
 
           if (queryError) throw queryError;
           const publishedEvents = (data ?? []).map((event) => ({
             id: event.id,
             title: event.title,
+            startsAt: event.starts_at,
             date: event.starts_at
-              ? new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(new Date(event.starts_at))
+              ? new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid' }).format(new Date(event.starts_at))
               : '',
             location: event.location_name,
           }));
 
           if (active) {
-            setEvents(publishedEvents);
+            setEvents(publishedEvents.sort((left, right) => (right.startsAt ?? '').localeCompare(left.startsAt ?? '')));
+            setEventPage(0);
             setError(false);
           }
           return;
@@ -92,6 +116,7 @@ export default function Calendar() {
                 id: `sheet-${i}`,
               title: columns[0].replace(/^"|"$/g, ''),
               date: columns[1].replace(/^"|"$/g, ''),
+              startsAt: null,
               location: columns[2].replace(/^"|"$/g, '')
             });
           }
@@ -99,6 +124,7 @@ export default function Calendar() {
 
         if (active) {
           setEvents(parsedEvents);
+          setEventPage(0);
           setError(false);
         }
       } catch (err) {
@@ -255,6 +281,13 @@ export default function Calendar() {
     }
   };
 
+  const isEventCompleted = (event: Event) => Boolean(
+    event.startsAt && getMadridDateKey(new Date(event.startsAt)) < getMadridDateKey(currentTime),
+  );
+  const visibleEvents = events.slice(eventPage * eventsPerPage, (eventPage + 1) * eventsPerPage);
+  const firstVisibleEvent = eventPage * eventsPerPage + 1;
+  const lastVisibleEvent = Math.min((eventPage + 1) * eventsPerPage, events.length);
+
   return (
     <>
     <section className="relative overflow-hidden border-b border-outline-variant bg-surface-container-low px-6 py-20 md:px-16 md:py-24" id="calendar">
@@ -299,7 +332,9 @@ export default function Calendar() {
               <p className="mt-2 font-body text-sm text-on-surface-variant">Las nuevas fechas aparecerán aquí cuando estén disponibles.</p>
             </div>
           ) : (
-            events.map((ev, i) => (
+            visibleEvents.map((ev, i) => {
+              const completed = isEventCompleted(ev);
+              return (
               <motion.article
                 key={`${ev.title}-${i}`}
                 initial={{ opacity: 0, y: 14 }}
@@ -313,12 +348,12 @@ export default function Calendar() {
                   <div className="flex min-w-0 items-center gap-5 sm:gap-7">
                     <div className="min-w-0">
                       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[9px] font-bold uppercase tracking-[0.17em] text-on-surface-variant sm:text-[10px]">
-                        <span className="inline-flex items-center gap-1.5 text-primary-container">
+                        <span className={`inline-flex items-center gap-1.5 ${completed ? 'text-on-surface-variant' : 'text-primary-container'}`}>
                           <Crosshair className="h-3.5 w-3.5" />
-                          Registro de operación
+                          {completed ? 'Operación completada' : 'Registro de operación'}
                         </span>
                         <span aria-hidden="true" className="text-outline-variant">/</span>
-                        <span>{ev.date ? 'Fecha registrada' : 'Fecha pendiente'}</span>
+                        <span>{completed ? 'Inscripciones cerradas' : ev.date ? 'Fecha registrada' : 'Fecha pendiente'}</span>
                       </div>
                       <h3 className="break-words font-tactical text-3xl font-bold uppercase leading-tight text-primary sm:text-4xl">
                         {ev.title}
@@ -361,15 +396,21 @@ export default function Calendar() {
                           {participantsOpenEventId === ev.id ? 'Ocultar lista' : 'Ver asistentes'}
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        disabled={pendingEventId === ev.id || Boolean(user && memberStatus !== 'approved')}
-                        onClick={() => void handleRegistration(ev)}
-                        className={`inline-flex min-h-11 items-center justify-center gap-2 px-4 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors disabled:cursor-wait disabled:opacity-60 ${registrationIds.includes(ev.id ?? '') ? 'border border-primary-container text-primary-container hover:bg-primary-container hover:text-on-primary' : 'bg-primary-container text-on-primary hover:bg-primary'}`}
-                      >
-                        {pendingEventId === ev.id ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <UserRoundCheck className="h-4 w-4" />}
-                        {!user ? 'Acceder para apuntarme' : memberStatus === 'pending' ? 'Pendiente de aprobación' : memberStatus === 'rejected' ? 'Alta no aprobada' : memberStatus !== 'approved' ? 'Estado no disponible' : registrationIds.includes(ev.id ?? '') ? 'Cancelar plaza' : 'Apuntarme'}
-                      </button>
+                      {completed ? (
+                        <div className="inline-flex min-h-11 items-center justify-center border border-outline-variant px-4 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+                          Operación completada
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={pendingEventId === ev.id || Boolean(user && memberStatus !== 'approved')}
+                          onClick={() => void handleRegistration(ev)}
+                          className={`inline-flex min-h-11 items-center justify-center gap-2 px-4 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors disabled:cursor-wait disabled:opacity-60 ${registrationIds.includes(ev.id ?? '') ? 'border border-primary-container text-primary-container hover:bg-primary-container hover:text-on-primary' : 'bg-primary-container text-on-primary hover:bg-primary'}`}
+                        >
+                          {pendingEventId === ev.id ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <UserRoundCheck className="h-4 w-4" />}
+                          {!user ? 'Acceder para apuntarme' : memberStatus === 'pending' ? 'Pendiente de aprobación' : memberStatus === 'rejected' ? 'Alta no aprobada' : memberStatus !== 'approved' ? 'Estado no disponible' : registrationIds.includes(ev.id ?? '') ? 'Cancelar plaza' : 'Apuntarme'}
+                        </button>
+                      )}
                       {registrationError && registrationErrorEventId === ev.id && <p role="alert" className="font-mono text-[9px] uppercase leading-relaxed text-red-200">{registrationError}</p>}
                     </div>
                   )}
@@ -393,9 +434,37 @@ export default function Calendar() {
                   </div>
                 )}
               </motion.article>
-            ))
+              );
+            })
           )}
         </div>
+        {!loading && !error && events.length > eventsPerPage && (
+          <nav aria-label="Paginación de operaciones" className="flex flex-col gap-3 border-t border-outline-variant/70 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">
+              {firstVisibleEvent}–{lastVisibleEvent} de {events.length} operaciones · más recientes primero
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={eventPage === 0}
+                onClick={() => setEventPage((page) => Math.max(0, page - 1))}
+                className="inline-flex min-h-10 items-center justify-center gap-2 border border-outline-variant px-3 font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:border-primary-container hover:text-primary-container disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronUp className="h-4 w-4" />
+                Más recientes
+              </button>
+              <button
+                type="button"
+                disabled={(eventPage + 1) * eventsPerPage >= events.length}
+                onClick={() => setEventPage((page) => page + 1)}
+                className="inline-flex min-h-10 items-center justify-center gap-2 border border-primary-container px-3 font-mono text-[9px] font-bold uppercase tracking-widest text-primary-container transition-colors hover:bg-primary-container hover:text-on-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Anteriores
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+          </nav>
+        )}
       </div>
     </section>
       {authOpen && (
