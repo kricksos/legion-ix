@@ -71,11 +71,38 @@ export default function Gallery() {
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [loadError, setLoadError] = useState(false);
   const [lightbox, setLightbox] = useState<{ albumIndex: number; photoIndex: number } | null>(null);
+  const [canScrollPrevious, setCanScrollPrevious] = useState(false);
+  const [canScrollNext, setCanScrollNext] = useState(false);
+  const [firstVisibleAlbum, setFirstVisibleAlbum] = useState(0);
+  const carouselRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const isLightboxOpen = lightbox !== null;
   const activeAlbum = lightbox ? albums[lightbox.albumIndex] : null;
   const activePhoto = activeAlbum && lightbox ? activeAlbum.photos[lightbox.photoIndex] : null;
+
+  useEffect(() => {
+    const carousel = carouselRef.current;
+    if (!carousel) return;
+
+    const updateCarouselState = () => {
+      const firstCard = carousel.firstElementChild as HTMLElement | null;
+      const gap = Number.parseFloat(getComputedStyle(carousel).columnGap) || 0;
+      const step = (firstCard?.getBoundingClientRect().width ?? 0) + gap;
+      setCanScrollPrevious(carousel.scrollLeft > 2);
+      setCanScrollNext(carousel.scrollLeft + carousel.clientWidth < carousel.scrollWidth - 2);
+      setFirstVisibleAlbum(step > 0 ? Math.round(carousel.scrollLeft / step) : 0);
+    };
+
+    updateCarouselState();
+    carousel.addEventListener('scroll', updateCarouselState, { passive: true });
+    const resizeObserver = new ResizeObserver(updateCarouselState);
+    resizeObserver.observe(carousel);
+    return () => {
+      carousel.removeEventListener('scroll', updateCarouselState);
+      resizeObserver.disconnect();
+    };
+  }, [albums, loading, loadError]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -185,6 +212,15 @@ export default function Gallery() {
     });
   };
 
+  const moveCarousel = (direction: -1 | 1) => {
+    const carousel = carouselRef.current;
+    const firstCard = carousel?.firstElementChild as HTMLElement | null;
+    if (!carousel || !firstCard) return;
+
+    const gap = Number.parseFloat(getComputedStyle(carousel).columnGap) || 0;
+    carousel.scrollBy({ left: direction * (firstCard.getBoundingClientRect().width + gap), behavior: 'smooth' });
+  };
+
   return (
     <section className="border-b border-outline-variant bg-surface px-6 py-20 md:px-16 md:py-24" id="gallery">
       <div className="mx-auto flex max-w-7xl flex-col gap-10 md:gap-12">
@@ -201,19 +237,32 @@ export default function Gallery() {
               Registro visual de operaciones Legion-IX.
             </p>
           </div>
-          <div className="flex w-fit items-center gap-3 border-l-2 border-primary-container px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-            <span className="font-tactical text-3xl leading-none text-primary-container">{String(albums.length).padStart(2, '0')}</span>
-            <span>Expedientes<br />archivados</span>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {(canScrollPrevious || canScrollNext) && !loading && !loadError && (
+              <div className="flex items-center gap-1.5">
+                <button type="button" aria-label="Álbum anterior" title="Álbum anterior" disabled={!canScrollPrevious} onClick={() => moveCarousel(-1)} className="flex h-10 w-10 items-center justify-center border border-outline-variant text-primary transition-colors hover:border-primary-container hover:text-primary-container disabled:cursor-not-allowed disabled:opacity-35">
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                <span aria-live="polite" className="min-w-12 text-center font-mono text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">{firstVisibleAlbum + 1} / {albums.length}</span>
+                <button type="button" aria-label="Álbum siguiente" title="Álbum siguiente" disabled={!canScrollNext} onClick={() => moveCarousel(1)} className="flex h-10 w-10 items-center justify-center border border-primary-container text-primary-container transition-colors hover:bg-primary-container hover:text-on-primary disabled:cursor-not-allowed disabled:opacity-35">
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <div className="flex w-fit items-center gap-3 border-l-2 border-primary-container px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+              <span className="font-tactical text-3xl leading-none text-primary-container">{String(albums.length).padStart(2, '0')}</span>
+              <span>Expedientes<br />archivados</span>
+            </div>
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5">
+        <div ref={carouselRef} role="region" aria-roledescription="carrusel" aria-label="Expedientes de misión" className="flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:gap-5">
           {loading ? (
-            <div role="status" className="col-span-full border border-outline-variant bg-surface-container px-6 py-10 font-mono text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+            <div role="status" className="w-full shrink-0 border border-outline-variant bg-surface-container px-6 py-10 font-mono text-xs font-bold uppercase tracking-widest text-on-surface-variant">
               Sincronizando expedientes...
             </div>
           ) : loadError ? (
-            <div role="alert" className="col-span-full border border-red-400/40 bg-surface-container px-6 py-10">
+            <div role="alert" className="w-full shrink-0 border border-red-400/40 bg-surface-container px-6 py-10">
               <span className="font-mono text-sm font-bold uppercase tracking-widest text-red-200">No se pudo cargar el archivo</span>
               <p className="mt-2 font-body text-sm text-on-surface-variant">Inténtalo de nuevo más tarde.</p>
             </div>
@@ -230,8 +279,8 @@ export default function Gallery() {
               initial={{ opacity: 0, y: 14 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: albumIndex * 0.08 }}
-              className="group relative aspect-[4/3] overflow-hidden border border-outline-variant/80 bg-surface-container text-left transition-colors hover:border-primary-container/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-container"
+              transition={{ delay: (albumIndex % 3) * 0.06 }}
+              className="group relative aspect-[4/3] w-[86%] shrink-0 snap-start overflow-hidden border border-outline-variant/80 bg-surface-container text-left transition-colors hover:border-primary-container/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-container sm:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-2.5rem)/3)]"
             >
               <img src={album.cover} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" loading="eager" decoding="async" />
               <span aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/35" />
@@ -251,7 +300,7 @@ export default function Gallery() {
               </span>
             </motion.button>
           )) : (
-            <div className="col-span-full border border-dashed border-primary-container/40 bg-surface-container px-6 py-10">
+            <div className="w-full shrink-0 border border-dashed border-primary-container/40 bg-surface-container px-6 py-10">
               <span className="font-mono text-sm font-bold uppercase tracking-widest text-primary-container">Archivo visual vacío</span>
               <p className="mt-2 font-body text-sm text-on-surface-variant">Las nuevas operaciones aparecerán aquí cuando se publiquen.</p>
             </div>
